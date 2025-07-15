@@ -2,7 +2,7 @@ import  express from "express";
 import jwt from 'jsonwebtoken';
 import { middleware } from "./middleware";
 import {JWT_SECRET} from '@repo/backend-common/config';
-import { CreateUserSchema } from "@repo/common/types";
+import { CreateUserSchema, SigninSchema ,CreateRoomSchema} from "@repo/common/types";
 import bcrypt from 'bcrypt';
 import { prismaClient } from '@repo/db/client'
  
@@ -10,36 +10,106 @@ import { prismaClient } from '@repo/db/client'
 const app = express();
 app.use(express.json());
 
-app.post("/signup", (req, res) => {
+app.post("/signup", async (req, res) => {
+  const parsedData = CreateUserSchema.safeParse(req.body);
 
-    const parsedData = CreateUserSchema.safeParse(req.body);
+  if(parsedData.data?.password===undefined){
+    return;
+  }
+
+  const hashPass = (await bcrypt.hash(parsedData.data?.password,5)).toString();
+
+  if (!parsedData.success) {
+    console.log(parsedData.error);
+    res.json({
+      message: "Incorrect inputs"
+    });
+    return;
+  }
+
+  try {
+    const user = await prismaClient.user.create({
+      data: {
+        email: parsedData.data.email,
+        password: hashPass,
+        name: parsedData.data.name
+      }
+    });
+
+    res.json({
+      userId: user.id
+    });
+  } catch (e) {
+    res.status(411).json({
+      message: "User already exists with this username"
+    });
+  }
+});
+
+app.post("/signin", async (req, res) => {
+    const parsedData = SigninSchema.safeParse(req.body);
     if (!parsedData.success) {
         res.json({
-        message: "Incorrect inputs"
+        message: "incorrect credentials"
         });
         return;
     }
 
-    prismaClient.user.create({
-        data: {
-        email: parsedData.data?.email,
-        password: parsedData.data.password,
-        name: parsedData.data.name
+    const user = await prismaClient.user.findFirst({
+        where: {
+        email: parsedData.data.email
         }
     });
 
+    if (!user || !user.password) {
+        res.status(403).json({
+        message: "not authorised"
+        });
+        return;
+    }
+
+    const decoded = await bcrypt.compare(parsedData.data.password, user.password);
+
+    if (!decoded) {
+        res.status(403).json({
+        message: "not authorised"
+        });
+        return;
+    }
+
+    const token = jwt.sign(
+        { userI: user.id },
+        JWT_SECRET
+    );
+
     res.json({
-        userId: "123"
+        token
     });
 });
 
-
-app.post('/room',middleware,(req,res)=>{
-    //db call
-
+app.post("/room", middleware, async (req, res) => {
+  const parsedData = CreateRoomSchema.safeParse(req.body);
+  if (!parsedData.success) {
     res.json({
-        roomId : 123
-    })
-})
+      message: "Incorrect inputs"
+    });
+    return;
+  }
 
-app.listen(3000);
+  // @ts-ignore: TODO: Fix this
+  const userId = req.userId;
+
+  await prismaClient.room.create({
+    data: {
+      slug: parsedData.data.name,
+      adminId: userId
+    }
+  });
+
+  res.json({
+    roomId: 123
+  });
+});
+
+
+app.listen(3001);
