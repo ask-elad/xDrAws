@@ -78,7 +78,7 @@ app.post("/signin", async (req, res) => {
     }
 
     const token = jwt.sign(
-        { userI: user.id },
+        { userId: user.id },
         JWT_SECRET
     );
 
@@ -88,6 +88,7 @@ app.post("/signin", async (req, res) => {
 });
 
 app.post("/room", middleware, async (req, res) => {
+
   const parsedData = CreateRoomSchema.safeParse(req.body);
   if (!parsedData.success) {
     res.json({
@@ -99,7 +100,7 @@ app.post("/room", middleware, async (req, res) => {
   // @ts-ignore: TODO: Fix this
   const userId = req.userId;
 
-  await prismaClient.room.create({
+  const room = await prismaClient.room.create({
     data: {
       slug: parsedData.data.name,
       adminId: userId
@@ -107,7 +108,7 @@ app.post("/room", middleware, async (req, res) => {
   });
 
   res.json({
-    roomId: 123
+    roomId: room.id
   });
 });
 
